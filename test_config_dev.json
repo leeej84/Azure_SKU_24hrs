@@ -1,0 +1,42 @@
+{
+    "GlobalSettings": {
+        "tempFolder": "C:\\Temp\\Files",
+        "workingFolder": "C:\\Windows\\Temp\\Files",
+        "zipFile": "C:\\Temp\\archice.7z"
+    },
+    "Tests": {
+        "Test1": {
+            "fileSize":"4096",
+            "numberOfFiles":1
+        },
+        "Test2": {
+            "fileSize":"16384",
+            "numberOfFiles":1
+        },
+        "Test3": {
+            "fileSize":"32768",
+            "numberOfFiles":1
+        },
+        "Test4": {
+            "fileSize":"131072",
+            "numberOfFiles":1
+        },
+        "Test5": {
+            "fileSize":"524288",
+            "numberOfFiles":1
+        },
+        "Test6": {
+            "fileSize":"1048576",
+            "numberOfFiles":2
+        },
+        "Test7": {
+            "fileSize":"104857600",
+            "numberOfFiles":2
+        },
+        "Test8": {
+            "fileSize":"524288000",
+            "numberOfFiles":2
+        }
+    }
+}
+
