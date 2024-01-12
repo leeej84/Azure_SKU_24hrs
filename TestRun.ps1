@@ -142,15 +142,9 @@ try {
         }
     }
 
-    #Read Config File
-    $config = Get-Content "C:\Scripts\test_config.json" | ConvertFrom-Json
-
-    #Get Azure Info
-    $azureDetails = Invoke-RestMethod -Headers @{"Metadata"="true"} -Method GET -Uri "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | ConvertTo-Json -Depth 64
-    $azureDetails | Out-File "$rootFolder\$($testTitle)_$folderName\Azure_Info.json"
-
-    #Export the system info
-    Get-ComputerInfo | ConvertTo-Json | Out-File "$rootFolder\$($testTitle)_$folderName\Sys_Info.json"
+    #Get the current date and time then add 24 hrs
+    $currentDateTime = Get-Date
+    $finishDateTime = $currentDateTime.AddHours(24)
 
     #Start performance capture
     Write-Host "Starting performance capture"
@@ -164,54 +158,69 @@ try {
         Get-Counter -Continuous -SampleInterval 1 -Counter $counters | Export-Counter -Path "$rootFolder\$($testTitle)_$($folderName)\$($testTitle)_$($folderName)_perfmon.csv" -FileFormat CSV -Force
     } -ArgumentList $rootFolder,$testTitle,$folderName
 
-    #Loop through each test
-    $results = foreach ($test in $($config.tests.psobject.Properties.name)) {
-        #Create folder structures
-        New-Item -Path $config.GlobalSettings.tempFolder -ItemType Directory -Force | Out-Null
-        New-Item -Path $config.GlobalSettings.workingFolder -ItemType Directory -Force | Out-Null
-        
-        $templateFile = Create-File -fileSize $config.Tests.$test.fileSize -location $config.GlobalSettings.tempFolder
-        $copyResult = Copy-Files -templateFile $templateFile -itemCopies $config.Tests.$test.numberOfFiles -workingFolder $config.GlobalSettings.workingFolder
-        Write-Host "Copying $($config.Tests.$test.numberOfFiles) at $($config.Tests.$test.fileSize) size, took $copyResult (ms)"
-        $ReadResult = Read-Files -workingFolder $config.GlobalSettings.workingFolder
-        Write-Host "Reading $($config.Tests.$test.numberOfFiles) at $($config.Tests.$test.fileSize) size, took $ReadResult (ms)"
-        $compressionResults = foreach ($compressionlevel in $(5,7,9)) {
-            $compressResult = Run-Compression -action compress -location $config.GlobalSettings.workingFolder -compressionLevel 5
-            Write-Host "Compressing $($config.Tests.$test.numberOfFiles) files at $($config.Tests.$test.fileSize) size, took $compressResult (ms) with $compressionlevel compression level"
-            $decompressResult = Run-Compression -action decompress -location $config.GlobalSettings.workingFolder
-            Write-Host "Decompressing $($config.Tests.$test.numberOfFiles) files at $($config.Tests.$test.fileSize) size, took $decompressResult (ms) with $compressionlevel compression level"
+    #Run the test in a loop for 24 hours
+    do {
+        #Read Config File
+        $config = Get-Content "C:\Scripts\test_config.json" | ConvertFrom-Json
+
+        #Get Azure Info
+        $azureDetails = Invoke-RestMethod -Headers @{"Metadata"="true"} -Method GET -Uri "http://169.254.169.254/metadata/instance?api-version=2021-02-01" | ConvertTo-Json -Depth 64
+        $azureDetails | Out-File "$rootFolder\$($testTitle)_$folderName\Azure_Info.json"
+
+        #Export the system info
+        Get-ComputerInfo | ConvertTo-Json | Out-File "$rootFolder\$($testTitle)_$folderName\Sys_Info.json"
+
+        #Loop through each test
+        $results = foreach ($test in $($config.tests.psobject.Properties.name)) {
+            #Create folder structures
+            New-Item -Path $config.GlobalSettings.tempFolder -ItemType Directory -Force | Out-Null
+            New-Item -Path $config.GlobalSettings.workingFolder -ItemType Directory -Force | Out-Null
+            
+            $templateFile = Create-File -fileSize $config.Tests.$test.fileSize -location $config.GlobalSettings.tempFolder
+            $copyResult = Copy-Files -templateFile $templateFile -itemCopies $config.Tests.$test.numberOfFiles -workingFolder $config.GlobalSettings.workingFolder
+            Write-Host "Copying $($config.Tests.$test.numberOfFiles) at $($config.Tests.$test.fileSize) size, took $copyResult (ms)"
+            $ReadResult = Read-Files -workingFolder $config.GlobalSettings.workingFolder
+            Write-Host "Reading $($config.Tests.$test.numberOfFiles) at $($config.Tests.$test.fileSize) size, took $ReadResult (ms)"
+            $compressionResults = foreach ($compressionlevel in $(5,7,9)) {
+                $compressResult = Run-Compression -action compress -location $config.GlobalSettings.workingFolder -compressionLevel 5
+                Write-Host "Compressing $($config.Tests.$test.numberOfFiles) files at $($config.Tests.$test.fileSize) size, took $compressResult (ms) with $compressionlevel compression level"
+                $decompressResult = Run-Compression -action decompress -location $config.GlobalSettings.workingFolder
+                Write-Host "Decompressing $($config.Tests.$test.numberOfFiles) files at $($config.Tests.$test.fileSize) size, took $decompressResult (ms) with $compressionlevel compression level"
+                [PSCustomObject]@{
+                    compressLevel = $compressionlevel
+                    compressResult = $compressResult
+                    decompressResult = $decompressResult
+                }
+            }
+            $cleanupResult = Remove-Folder -workingFolder $config.GlobalSettings.workingFolder
+            $cleanupResult = $cleanupResult + $(Remove-Folder -workingFolder $config.GlobalSettings.tempFolder)   
+            
+            Write-Host "Cleaning up all files after the test took $cleanupResult (ms)"
+
             [PSCustomObject]@{
-                compressLevel = $compressionlevel
-                compressResult = $compressResult
-                decompressResult = $decompressResult
+                DateTime = $(Get-Date).ToString("dd/MM/yyyy hh:mm:ss")
+                File_Size = $config.Tests.$test.fileSize
+                Num_Files = $config.Tests.$test.numberOfFiles
+                Copy = $copyResult
+                Read = $ReadResult
+                Compression_Normal = $compressionResults | Where-Object {$_.compressLevel -eq 5} | Select-Object -ExpandProperty compressResult
+                Decompression_Normal = $compressionResults | Where-Object {$_.compressLevel -eq 5} | Select-Object -ExpandProperty decompressResult
+                Compression_Maximum = $compressionResults | Where-Object {$_.compressLevel -eq 7} | Select-Object -ExpandProperty compressResult
+                Decompression_Maximum = $compressionResults | Where-Object {$_.compressLevel -eq 7} | Select-Object -ExpandProperty decompressResult
+                Compression_Ultra = $compressionResults | Where-Object {$_.compressLevel -eq 9} | Select-Object -ExpandProperty compressResult
+                Decompression_Ultra = $compressionResults | Where-Object {$_.compressLevel -eq 9} | Select-Object -ExpandProperty decompressResult
+                Cleanup = $cleanupResult
             }
         }
-        $cleanupResult = Remove-Folder -workingFolder $config.GlobalSettings.workingFolder
-        $cleanupResult = $cleanupResult + $(Remove-Folder -workingFolder $config.GlobalSettings.tempFolder)   
-        
-        Write-Host "Cleaning up all files after the test took $cleanupResult (ms)"
 
-        [PSCustomObject]@{
-            DateTime = $(Get-Date).ToString("dd/MM/yyyy hh:mm:ss")
-            File_Size = $config.Tests.$test.fileSize
-            Num_Files = $config.Tests.$test.numberOfFiles
-            Copy = $copyResult
-            Read = $ReadResult
-            Compression_Normal = $compressionResults | Where-Object {$_.compressLevel -eq 5} | Select-Object -ExpandProperty compressResult
-            Decompression_Normal = $compressionResults | Where-Object {$_.compressLevel -eq 5} | Select-Object -ExpandProperty decompressResult
-            Compression_Maximum = $compressionResults | Where-Object {$_.compressLevel -eq 7} | Select-Object -ExpandProperty compressResult
-            Decompression_Maximum = $compressionResults | Where-Object {$_.compressLevel -eq 7} | Select-Object -ExpandProperty decompressResult
-            Compression_Ultra = $compressionResults | Where-Object {$_.compressLevel -eq 9} | Select-Object -ExpandProperty compressResult
-            Decompression_Ultra = $compressionResults | Where-Object {$_.compressLevel -eq 9} | Select-Object -ExpandProperty decompressResult
-            Cleanup = $cleanupResult
-        }
-    }
+        #Write out Results
+        if (!(Test-Path "$rootFolder\$($testTitle)_$($folderName)")) { New-Item -Path "$rootFolder\$($testTitle)_$($folderName)" -ItemType Directory | Out-Null}
+        $results | Export-CSV -Path "$rootFolder\$($testTitle)_$($folderName)\$($testTitle)_$($folderName)_timings.csv" -NoTypeInformation -Append
+
+    } until ($(Get-Date) -gt $finishDateTime) 
 
     #Stop performance capture
     Get-Job -Name Performance_Capture  | Stop-Job | Receive-Job | Remove-Job
-
-    if (!(Test-Path "$rootFolder\$($testTitle)_$($folderName)")) { New-Item -Path "$rootFolder\$($testTitle)_$($folderName)" -ItemType Directory | Out-Null}
-    $results | Export-CSV -Path "$rootFolder\$($testTitle)_$($folderName)\$($testTitle)_$($folderName)_timings.csv" -NoTypeInformation
 
     Stop-Transcript
 } catch {

@@ -100,7 +100,7 @@ resource "azurerm_virtual_machine_extension" "configure_winrm" {
 
   protected_settings = <<SETTINGS
   {    
-    "fileUris": ["https://raw.githubusercontent.com/leeej84/Azure-SKU-Testing/main/Configure_Winrm.ps1"],
+    "fileUris": ["https://raw.githubusercontent.com/leeej84/Azure_SKU_24hrs/main/Configure_Winrm.ps1"],
     "commandToExecute": "powershell -ExecutionPolicy Bypass -NoProfile -NonInteractive -File Configure_Winrm.ps1 -hostname ${var.prefix}-vm -protocol http"
   }
   SETTINGS

@@ -18,6 +18,6 @@ variable "ext_ip" {
 #Standard_D2ds_v5, Standard_D2ds_v5, Standard_D2ds_v5 , Standard_D2ds_v5, Standard_D2ds_v5, 
 variable "vmSize" {
   type        = string
-  default     = "Standard_DS2_v2"
+  default     = "Standard_D2ds_v5"
   description = "VM SKU size in Azure"
 }
